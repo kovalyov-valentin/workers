@@ -6,8 +6,10 @@ import (
 	"log"
 	"math/rand"
 	"os"
+	"os/signal"
 	"sort"
 	"strconv"
+	"sync"
 	"time"
 )
 
@@ -57,6 +59,8 @@ func parseConfig() Config {
 	return config
 }
 func main() {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
 	// Конфигурируем наше приложение
 	// если env не заданы используем константы
 	config := parseConfig()
@@ -64,18 +68,23 @@ func main() {
 	chPacket := make(chan []int, DefaultSizeChanPacket)
 	chBattery := make(chan [3]int, DefaultSizeChanPacket)
 
-	ctx := context.Background()
-	go WorkerBattery(ctx, &chBattery, config.TickerMessage)
-	go WorkerPublisher(ctx, &chPacket, config.TickerPublisher)
+	wg := sync.WaitGroup{}
+	wg.Add(2)
+	go WorkerBattery(ctx, &chBattery, config.TickerMessage, &wg)
+	go WorkerPublisher(ctx, &chPacket, config.TickerPublisher, &wg)
 
 	for i := 0; i < config.CountWorkers; i++ {
-		go WorkerConsumer(ctx, &chPacket, &chBattery)
+		wg.Add(1)
+		go WorkerConsumer(ctx, &chPacket, &chBattery, &wg)
 	}
 
-	time.Sleep(time.Second * 300)
+	wg.Wait()
+
 }
 
-func WorkerConsumer(ctx context.Context, chPackets *chan []int, chResult *chan [3]int) {
+func WorkerConsumer(ctx context.Context, chPackets *chan []int, chResult *chan [3]int, wg *sync.WaitGroup) {
+	defer wg.Done()
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -96,7 +105,9 @@ func WorkerConsumer(ctx context.Context, chPackets *chan []int, chResult *chan [
 	}
 }
 
-func WorkerBattery(ctx context.Context, ch *chan [3]int, t time.Duration) {
+func WorkerBattery(ctx context.Context, ch *chan [3]int, t time.Duration, wg *sync.WaitGroup) {
+	defer wg.Done()
+
 	var sum int
 	var ticker *time.Ticker = time.NewTicker(t)
 
@@ -116,8 +127,11 @@ func WorkerBattery(ctx context.Context, ch *chan [3]int, t time.Duration) {
 	}
 }
 
-func WorkerPublisher(ctx context.Context, ch *chan []int, t time.Duration) {
+func WorkerPublisher(ctx context.Context, ch *chan []int, t time.Duration, wg *sync.WaitGroup) {
+	defer wg.Done()
+
 	var ticker *time.Ticker = time.NewTicker(t)
+
 	for {
 		select {
 		case <-ctx.Done():
