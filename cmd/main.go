@@ -15,6 +15,7 @@ import (
 
 type Config struct {
 	CountWorkers    int
+	CountGoroutine  int
 	SizeChanPacket  int
 	TickerPublisher time.Duration
 	TickerMessage   time.Duration
@@ -22,6 +23,7 @@ type Config struct {
 
 const (
 	DefaultCountWorkers    = 2
+	DefaultCountGoroutine  = 3
 	DefaultSizeChanPacket  = 4
 	DefaultTickerPublisher = time.Duration(500 * time.Millisecond)
 	DefaultTickerMessage   = time.Duration(1 * time.Second)
@@ -33,17 +35,25 @@ func parseConfig() Config {
 	countWorkersStr := os.Getenv("COUNT_WORKERS")
 	countWorker, err := strconv.Atoi(countWorkersStr)
 	if err != nil || countWorker == 0 {
-		log.Println("Переменная COUNT_WORKERS задана не верно")
+		log.Println("Переменная COUNT_WORKERS задана неверно")
 		countWorker = DefaultCountWorkers
 	}
 	config.CountWorkers = countWorker
+
+	countGoroutineStr := os.Getenv("COUNT_GOROUTINE")
+	countGoroutine, err := strconv.Atoi(countGoroutineStr)
+	if err != nil || countGoroutine == 0 {
+		log.Println("Переменная COUNT_GOROUTINE заданая неверно")
+		countGoroutine = DefaultCountGoroutine
+	}
+	config.CountGoroutine = countGoroutine
 
 	tickerPublisherStr := os.Getenv("TICKER_PUBLISHER")
 	tickerPublisher, err := strconv.ParseInt(tickerPublisherStr, 10, 64)
 
 	config.TickerPublisher = time.Duration(tickerPublisher) * time.Millisecond
 	if err != nil || tickerPublisher == 0 {
-		log.Println("Переменная TICKER_PUBLISHER задана не верно")
+		log.Println("Переменная TICKER_PUBLISHER задана неверно")
 		config.TickerPublisher = DefaultTickerPublisher
 	}
 
@@ -52,7 +62,7 @@ func parseConfig() Config {
 
 	config.TickerMessage = time.Duration(tickerMessage) * time.Millisecond
 	if err != nil || tickerMessage == 0 {
-		log.Println("Переменная TICKER_MESSAGE задана не верно")
+		log.Println("Переменная TICKER_MESSAGE задана неверно")
 		config.TickerMessage = DefaultTickerMessage
 	}
 
@@ -69,9 +79,14 @@ func main() {
 	chBattery := make(chan [3]int, DefaultSizeChanPacket)
 
 	wg := sync.WaitGroup{}
-	wg.Add(2)
+	wg.Add(1)
 	go WorkerBattery(ctx, &chBattery, config.TickerMessage, &wg)
-	go WorkerPublisher(ctx, &chPacket, config.TickerPublisher, &wg)
+	// go WorkerPublisher(ctx, &chPacket, config.TickerPublisher, &wg)
+
+	for i := 0; i < config.CountGoroutine; i++ {
+		wg.Add(1)
+		go WorkerPublisher(ctx, &chPacket, config.TickerPublisher, &wg)
+	}
 
 	for i := 0; i < config.CountWorkers; i++ {
 		wg.Add(1)
