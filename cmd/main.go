@@ -19,10 +19,13 @@ type Config struct {
 }
 
 const (
-	DefaultCountWorkers = 10
+	DefaultCountWorkers    = 2
+	DefaultSizeChanPacket  = 4
+	DefaultTickerPublisher = time.Duration(500 * time.Millisecond)
+	DefaultTickerMessage   = time.Duration(1 * time.Second)
 )
 
-func main() {
+func parseConfig() Config {
 	config := Config{}
 
 	countWorkersStr := os.Getenv("COUNT_WORKERS")
@@ -31,22 +34,41 @@ func main() {
 		log.Println("Переменная COUNT_WORKERS задана не верно")
 		countWorker = DefaultCountWorkers
 	}
-
 	config.CountWorkers = countWorker
 
-	chPacket := make(chan []int, config.SizeChanPacket)
-	// Делаем второй канал такого же размера чтобы небыло блокировки
-	chBattery := make(chan [3]int, config.SizeChanPacket)
+	tickerPublisherStr := os.Getenv("TICKER_PUBLISHER")
+	tickerPublisher, err := strconv.ParseInt(tickerPublisherStr, 10, 64)
 
-	//w := sync.WaitGroup{}
+	config.TickerPublisher = time.Duration(tickerPublisher) * time.Millisecond
+	if err != nil || tickerPublisher == 0 {
+		log.Println("Переменная TICKER_PUBLISHER задана не верно")
+		config.TickerPublisher = DefaultTickerPublisher
+	}
+
+	tickerMessageStr := os.Getenv("TICKER_MESSAGE")
+	tickerMessage, err := strconv.ParseInt(tickerMessageStr, 10, 64)
+
+	config.TickerMessage = time.Duration(tickerMessage) * time.Millisecond
+	if err != nil || tickerMessage == 0 {
+		log.Println("Переменная TICKER_MESSAGE задана не верно")
+		config.TickerMessage = DefaultTickerMessage
+	}
+
+	return config
+}
+func main() {
+	// Конфигурируем наше приложение
+	// если env не заданы используем константы
+	config := parseConfig()
+
+	chPacket := make(chan []int, DefaultSizeChanPacket)
+	chBattery := make(chan [3]int, DefaultSizeChanPacket)
 
 	ctx := context.Background()
-	// TODO пробросить контекст попозже нормальный
 	go WorkerBattery(ctx, &chBattery, config.TickerMessage)
 	go WorkerPublisher(ctx, &chPacket, config.TickerPublisher)
 
 	for i := 0; i < config.CountWorkers; i++ {
-		//w.Add(1)
 		go WorkerConsumer(ctx, &chPacket, &chBattery)
 	}
 
